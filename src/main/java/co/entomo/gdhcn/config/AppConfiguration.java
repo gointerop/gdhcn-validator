@@ -81,12 +81,12 @@ public class AppConfiguration {
 					.followRedirects(HttpClient.Redirect.NORMAL).build();
 		}
 		CertificateFactory cf = CertificateFactory.getInstance("X.509");
-        FileInputStream certInputStream = new FileInputStream(certificateFile);
+        java.io.InputStream certInputStream = new java.io.ByteArrayInputStream(
+                co.entomo.gdhcn.util.PemSource.read(certificateFile).getBytes(java.nio.charset.StandardCharsets.UTF_8));
         X509Certificate certificate = (X509Certificate) cf.generateCertificate(certInputStream);
 
         // Load the private key
-        FileInputStream keyInputStream = new FileInputStream(keyFile);
-        String privakeKeyContent = readFileToString(keyFile);
+        String privakeKeyContent = co.entomo.gdhcn.util.PemSource.read(keyFile);
         
         privakeKeyContent = privakeKeyContent.replace("-----BEGIN PRIVATE KEY-----", "")
         .replace("-----END PRIVATE KEY-----", "")
