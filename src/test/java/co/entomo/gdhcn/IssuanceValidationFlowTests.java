@@ -1,5 +1,8 @@
 package co.entomo.gdhcn;
 
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -202,5 +205,101 @@ class IssuanceValidationFlowTests {
 				.andExpect(jsonPath("$.resourceType").value("Bundle"));
 		// single use: the second download is refused
 		mvc.perform(get("/v2/ips-json/" + ipsId)).andExpect(status().is4xxClientError());
+	}
+
+	// ------------------------------------------------------------------ passcode: hash, attempt limit, status codes
+
+	@Autowired
+	co.entomo.gdhcn.repository.QrCodeRepository qrCodes;
+
+	private String manifestIdOf(String hc1) throws Exception {
+		String url = com.jayway.jsonpath.JsonPath.read(
+				validate(hc1).andReturn().getResponse().getContentAsString(), "$.shLinkContent.url");
+		return url.substring(url.lastIndexOf('/') + 1);
+	}
+
+	private ResultActions openManifest(String manifestId, String passcode) throws Exception {
+		String body = passcode == null ? "{\"recipient\":\"r\"}"
+				: "{\"recipient\":\"r\",\"passcode\":\"" + passcode + "\"}";
+		return mvc.perform(post("/v2/manifests/" + manifestId).contentType(MediaType.APPLICATION_JSON).content(body));
+	}
+
+	@Test
+	void thePasscodeIsStoredOnlyAsAnArgon2Hash() throws Exception {
+		String manifestId = manifestIdOf(issue(null, "4321"));
+		co.entomo.gdhcn.entity.QrCode row = qrCodes.findByManifestId(manifestId).orElseThrow();
+		assertNull(row.getPassCode());
+		assertTrue(row.getPassCodeHash().startsWith("$argon2"), row.getPassCodeHash());
+		assertFalse(row.getPassCodeHash().contains("4321"));
+		openManifest(manifestId, "4321").andExpect(status().isOk());
+	}
+
+	@Test
+	void aWrongPasscodeIs401WithTheRemainingAttempts() throws Exception {
+		String manifestId = manifestIdOf(issue(null, "1234"));
+		openManifest(manifestId, "0000").andExpect(status().isUnauthorized())
+				.andExpect(jsonPath("$.remainingAttempts").value(4));
+		openManifest(manifestId, "1111").andExpect(status().isUnauthorized())
+				.andExpect(jsonPath("$.remainingAttempts").value(3));
+		// the right one still works while attempts remain; the wrong ones are not forgiven
+		openManifest(manifestId, "1234").andExpect(status().isOk());
+		assertEquals(2, qrCodes.findByManifestId(manifestId).orElseThrow().getFailedAttempts());
+	}
+
+	@Test
+	void afterTheLastAttemptTheLinkIsInactiveEvenWithTheRightPasscode() throws Exception {
+		String manifestId = manifestIdOf(issue(null, "1234"));
+		for (int remaining = 4; remaining >= 0; remaining--) {
+			openManifest(manifestId, "9999").andExpect(status().isUnauthorized())
+					.andExpect(jsonPath("$.remainingAttempts").value(remaining));
+		}
+		openManifest(manifestId, "9999").andExpect(status().isNotFound());
+		openManifest(manifestId, "1234").andExpect(status().isNotFound());
+	}
+
+	@Test
+	void aMissingPasscodeDoesNotUseUpAnAttempt() throws Exception {
+		String manifestId = manifestIdOf(issue(null, "1234"));
+		openManifest(manifestId, null).andExpect(status().isUnauthorized())
+				.andExpect(jsonPath("$.remainingAttempts").value(5));
+		openManifest(manifestId, " ").andExpect(status().isUnauthorized());
+		assertEquals(0, qrCodes.findByManifestId(manifestId).orElseThrow().getFailedAttempts());
+	}
+
+	@Test
+	void anUnknownLinkIs404() throws Exception {
+		openManifest("does-not-exist", "1234").andExpect(status().isNotFound());
+	}
+
+	@Test
+	void anExpiredLinkIs404() throws Exception {
+		// a QR that is already expired does not even validate, so age a valid link instead
+		String manifestId = manifestIdOf(issue("2099-01-01T00:00:00.000Z", "1234"));
+		co.entomo.gdhcn.entity.QrCode row = qrCodes.findByManifestId(manifestId).orElseThrow();
+		row.setExpiresOn(java.time.Instant.now().minusSeconds(60));
+		qrCodes.save(row);
+		openManifest(manifestId, "1234").andExpect(status().isNotFound());
+	}
+
+	@Test
+	void aLinkWithoutPasscodeHasNoManifest() throws Exception {
+		String manifestId = manifestIdOf(issue("2099-01-01T00:00:00.000Z", null));
+		openManifest(manifestId, "1234").andExpect(status().isNotFound());
+	}
+
+	@Test
+	void aLinkIssuedBeforeTheHashIsCheckedInClearAndUpgraded() throws Exception {
+		String manifestId = manifestIdOf(issue(null, "1234"));
+		co.entomo.gdhcn.entity.QrCode row = qrCodes.findByManifestId(manifestId).orElseThrow();
+		row.setPassCodeHash(null);
+		row.setPassCode("5678");
+		qrCodes.save(row);
+
+		openManifest(manifestId, "1234").andExpect(status().isUnauthorized());
+		openManifest(manifestId, "5678").andExpect(status().isOk());
+		row = qrCodes.findByManifestId(manifestId).orElseThrow();
+		assertNull(row.getPassCode());
+		assertTrue(row.getPassCodeHash().startsWith("$argon2"));
+		openManifest(manifestId, "5678").andExpect(status().isOk());
 	}
 }
