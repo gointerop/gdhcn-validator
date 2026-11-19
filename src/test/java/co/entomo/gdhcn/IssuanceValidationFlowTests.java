@@ -97,6 +97,9 @@ class IssuanceValidationFlowTests {
 	@Autowired
 	MockMvc mvc;
 
+	@Autowired
+	co.entomo.gdhcn.service.GdhcnService gdhcnService;
+
 	@MockitoBean
 	HttpClient httpClient;
 
@@ -139,10 +142,25 @@ class IssuanceValidationFlowTests {
 	void issuedCertificateValidatesThroughAllNineSteps() throws Exception {
 		ResultActions r = validate(issue("2099-01-01T00:00:00.000Z")).andExpect(status().isOk());
 		for (int i = 1; i <= 9; i++) {
-			r.andExpect(jsonPath("$.validationStatus['" + i + "'].status").value("SUCCESS"));
+				r.andExpect(jsonPath("$.validationStatus['" + i + "'].status").value("SUCCESS"));
 		}
-		r.andExpect(jsonPath("$.shLinkContent.label").value("GDHCN Validator"))
+		r.andExpect(jsonPath("$.shLinkContent.label").value(org.hamcrest.Matchers.nullValue()))
 				.andExpect(jsonPath("$.shLinkContent.exp").isNumber());
+	}
+
+	@Test
+	void legacyListFormatStillIssuesAndValidates() throws Exception {
+		Object service = org.springframework.test.util.AopTestUtils.getTargetObject(gdhcnService);
+		org.springframework.test.util.ReflectionTestUtils.setField(service, "vhlPayloadFormat", "list");
+		try {
+			ResultActions r = validate(issue("2099-01-01T00:00:00.000Z")).andExpect(status().isOk());
+			for (int i = 1; i <= 9; i++) {
+				r.andExpect(jsonPath("$.validationStatus['" + i + "'].status").value("SUCCESS"));
+			}
+			r.andExpect(jsonPath("$.shLinkContent.label").value("GDHCN Validator"));
+		} finally {
+			org.springframework.test.util.ReflectionTestUtils.setField(service, "vhlPayloadFormat", "map");
+		}
 	}
 
 	@Test
