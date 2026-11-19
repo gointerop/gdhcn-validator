@@ -41,6 +41,7 @@ public class LocalFileSystem implements GdhcnFileSystem
         String location = baseLocation.endsWith(File.separator)? baseLocation + jsonFolder +File.separator + fileName: baseLocation + File.separator + jsonFolder + File.separator + fileName;
         Path path = Paths.get(location);
 
+        Files.createDirectories(path.getParent());
         Files.writeString(path, fileContent, StandardOpenOption.CREATE_NEW);
     }
 
@@ -56,7 +57,10 @@ public class LocalFileSystem implements GdhcnFileSystem
         InputStream is = new FileInputStream(file);
         String location = baseLocation.endsWith(File.separator)? baseLocation + jsonFolder +File.separator + fileName: baseLocation + File.separator + jsonFolder + File.separator + fileName;
         Path path = Paths.get(location);
-        Files.copy(is, path, StandardCopyOption.REPLACE_EXISTING);
+        Files.createDirectories(path.getParent());
+        try (is) {
+            Files.copy(is, path, StandardCopyOption.REPLACE_EXISTING);
+        }
     }
 
     /**
