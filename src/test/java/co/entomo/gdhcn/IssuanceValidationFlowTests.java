@@ -48,6 +48,7 @@ import org.springframework.test.web.servlet.ResultActions;
  * mocked (it returns a certificate generated here); everything else is the real code path:
  * JSON binding, ModelMapper, JPA, file storage, CBOR/COSE/deflate/Base45 and signature checks.
  */
+@org.junit.jupiter.api.extension.ExtendWith(org.springframework.boot.test.system.OutputCaptureExtension.class)
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles({ "test", "fileSystem" })
@@ -95,6 +96,7 @@ class IssuanceValidationFlowTests {
 		r.add("tng.dsc.privateKey", () -> DIR.resolve("dsc.key").toString());
 		r.add("tng.dsc.privateKey.kid", () -> KID);
 		r.add("tng.country", () -> COUNTRY);
+		r.add("vhl.cors.allowed-origins", () -> "https://viewer.example.gov.br");
 	}
 
 	@Autowired
@@ -301,5 +303,95 @@ class IssuanceValidationFlowTests {
 		assertNull(row.getPassCode());
 		assertTrue(row.getPassCodeHash().startsWith("$argon2"));
 		openManifest(manifestId, "5678").andExpect(status().isOk());
+	}
+
+	// ------------------------------------------------------------------ logs without patient data, CORS, 404s
+
+	private static final String ORIGIN = "https://viewer.example.gov.br";
+
+	@Test
+	void noPatientDataQrContentOrPasscodeReachesTheLogs(
+			org.springframework.boot.test.system.CapturedOutput output) throws Exception {
+		String body = "{\"jsonContent\":\"{\\\"resourceType\\\":\\\"Bundle\\\",\\\"note\\\":\\\"SENTINEL-PHI-9f3a\\\"}\","
+				+ "\"expiresOn\":\"2099-01-01T00:00:00.000Z\",\"passCode\":\"pin-7391-x\"}";
+		String hc1 = mvc.perform(post("/v2/vshcIssuance").contentType(MediaType.APPLICATION_JSON).content(body))
+				.andExpect(status().isOk()).andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+		String manifestId = manifestIdOf(hc1);
+		String manifest = openManifest(manifestId, "pin-7391-x").andExpect(status().isOk()).andReturn()
+				.getResponse().getContentAsString();
+		openManifest(manifestId, "wrong-pin-5528").andExpect(status().isUnauthorized());
+		String location = com.jayway.jsonpath.JsonPath.read(manifest, "$.files[0].location");
+		mvc.perform(get("/v2/ips-json/" + location.substring(location.lastIndexOf('/') + 1)))
+				.andExpect(status().isOk());
+
+		String logs = output.getAll();
+		assertFalse(logs.contains("SENTINEL-PHI-9f3a"), "IPS content in the log");
+		assertFalse(logs.contains("pin-7391-x"), "passcode in the log");
+		assertFalse(logs.contains("wrong-pin-5528"), "attempted passcode in the log");
+		assertFalse(logs.contains(hc1.substring(8, 60)), "QR content in the log");
+	}
+
+	@Test
+	void anIssuanceFailureIsAnErrorNotANullPointer() throws Exception {
+		Object service = org.springframework.test.util.AopTestUtils.getTargetObject(gdhcnService);
+		Object good = org.springframework.test.util.ReflectionTestUtils.getField(service, "dscKeyPath");
+		org.springframework.test.util.ReflectionTestUtils.setField(service, "dscKeyPath", "/nonexistent/dsc.key");
+		try {
+			mvc.perform(post("/v2/vshcIssuance").contentType(MediaType.APPLICATION_JSON)
+					.content("{\"jsonContent\":\"{}\"}")).andExpect(status().isInternalServerError())
+					.andExpect(jsonPath("$.error").value("Unable to issue the certificate"));
+		} finally {
+			org.springframework.test.util.ReflectionTestUtils.setField(service, "dscKeyPath", good);
+		}
+	}
+
+	@Test
+	void corsIsOnlyGrantedToTheListedOrigin() throws Exception {
+		org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder preflight =
+				org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options("/v2/manifests/abc")
+						.header("Access-Control-Request-Method", "POST");
+		mvc.perform(preflight.header("Origin", ORIGIN)).andExpect(status().isOk())
+				.andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header()
+						.string("Access-Control-Allow-Origin", ORIGIN));
+		mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options("/v2/manifests/abc")
+				.header("Access-Control-Request-Method", "POST").header("Origin", "https://evil.example"))
+				.andExpect(status().isForbidden());
+		// a link answers with the header for the listed origin and never with a wildcard
+		mvc.perform(get("/v2/ips-json/abc").header("Origin", ORIGIN)).andExpect(status().isNotFound())
+				.andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header()
+						.string("Access-Control-Allow-Origin", ORIGIN));
+	}
+
+	@Test
+	void ipsDownloadsThatAreNotValidAre404() throws Exception {
+		mvc.perform(get("/v2/ips-json/does-not-exist")).andExpect(status().isNotFound());
+
+		// the manifest id of a passcode-protected link is not a direct download
+		String protectedId = manifestIdOf(issue(null, "1234"));
+		mvc.perform(get("/v2/ips-json/" + protectedId)).andExpect(status().isNotFound());
+
+		// a link without passcode, aged past its expiry
+		String openId = manifestIdOf(issue("2099-01-01T00:00:00.000Z", null));
+		co.entomo.gdhcn.entity.QrCode row = qrCodes.findByManifestId(openId).orElseThrow();
+		mvc.perform(get("/v2/ips-json/" + openId)).andExpect(status().isOk());
+		row.setExpiresOn(java.time.Instant.now().minusSeconds(60));
+		qrCodes.save(row);
+		mvc.perform(get("/v2/ips-json/" + openId)).andExpect(status().isNotFound());
+	}
+
+	@Autowired
+	org.springframework.jdbc.core.JdbcTemplate jdbc;
+
+	@Test
+	void anIpsLinkPastItsLifetimeIs404() throws Exception {
+		String manifestId = manifestIdOf(issue(null, "1234"));
+		String manifest = openManifest(manifestId, "1234").andExpect(status().isOk()).andReturn().getResponse()
+				.getContentAsString();
+		String location = com.jayway.jsonpath.JsonPath.read(manifest, "$.files[0].location");
+		String ipsId = location.substring(location.lastIndexOf('/') + 1);
+		// created_at is set by Hibernate on insert only, so age the row directly
+		assertEquals(1, jdbc.update("update ips_file set created_at = ? where id = ?",
+				java.sql.Timestamp.from(java.time.Instant.now().minus(java.time.Duration.ofHours(3))), ipsId));
+		mvc.perform(get("/v2/ips-json/" + ipsId)).andExpect(status().isNotFound());
 	}
 }

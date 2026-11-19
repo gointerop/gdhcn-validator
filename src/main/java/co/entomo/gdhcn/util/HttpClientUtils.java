@@ -60,7 +60,6 @@ public class HttpClientUtils {
 			log.info("Response statuc code "+response.statusCode());
 			if(response.statusCode() == java.net.HttpURLConnection.HTTP_OK)
 			{
-				log.info("Response Body: "+response.body());				
 				List<GdhcnCertificateVO> voList = OBJECT_MAPPER.readValue(response.body(), new TypeReference<List<GdhcnCertificateVO>>() {});
 				if(kid !=null){
 					for (GdhcnCertificateVO gdhcnCertificateVO : voList) {
@@ -75,13 +74,13 @@ public class HttpClientUtils {
 				//return voList.get(0);
 			}
 		} catch (IOException e) {
-			e.printStackTrace();
+			log.warn("Trust list request failed: {}", e.getClass().getSimpleName());
 			throw new GdhcnValidationException(e.getLocalizedMessage());
 		} catch (JacksonException e) {
 			throw new GdhcnValidationException(e.getLocalizedMessage());
 		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
-			e.printStackTrace();
+			log.warn("Trust list request failed: {}", e.getClass().getSimpleName());
 			throw new GdhcnValidationException(e.getLocalizedMessage());
 		}
 		throw new GdhcnValidationException("Country "+countryCode+" not found");
