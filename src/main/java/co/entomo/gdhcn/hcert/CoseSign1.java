@@ -56,13 +56,25 @@ public final class CoseSign1 {
      * which is what the GDHCN trust list publishes.
      */
     public static byte[] sign(byte[] payload, String kid, PrivateKey key) throws CoseException {
+        return sign(payload, kid == null ? null : CBORObject.FromObject(kid), key);
+    }
+
+    /**
+     * Signs {@code payload} with ES256, writing the key id as a byte string (the HCERT form: the first
+     * 8 bytes of the SHA-256 of the DSC), which is 4 bytes shorter than the Base64 text form.
+     */
+    public static byte[] signWithKidBytes(byte[] payload, byte[] kid, PrivateKey key) throws CoseException {
+        return sign(payload, kid == null ? null : CBORObject.FromObject(kid), key);
+    }
+
+    private static byte[] sign(byte[] payload, CBORObject kid, PrivateKey key) throws CoseException {
         if (!(key instanceof ECKey ec) || fieldSize(ec) != 256) {
             throw new CoseException("ES256 signing requires an EC P-256 private key");
         }
         CBORObject header = CBORObject.NewMap();
         header.Add(CBORObject.FromObject(LABEL_ALG), CBORObject.FromObject(ALG_ES256));
         if (kid != null) {
-            header.Add(CBORObject.FromObject(LABEL_KID), CBORObject.FromObject(kid));
+            header.Add(CBORObject.FromObject(LABEL_KID), kid);
         }
         byte[] protectedBytes = header.EncodeToBytes();
         byte[] signature;

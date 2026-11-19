@@ -42,6 +42,30 @@ public class GreenCertificateEncoder {
         return getBase45(deflateBytes);
     }
 
+    /**
+     * Signs an already-built CBOR payload (CWT) -> Deflate -> BASE45. When the configured kid is the Base64 of
+     * 8 bytes it is written as a byte string, as the HCERT specification asks.
+     */
+    public String encodeCbor(byte[] cborBytes) throws CoseException, CompressorException, IOException {
+        byte[] kidBytes = kidAsEightBytes();
+        byte[] coseBytes = kidBytes != null
+                ? CoseSign1.signWithKidBytes(cborBytes, kidBytes, privateKey)
+                : CoseSign1.sign(cborBytes, kid, privateKey);
+        return getBase45(getDeflateBytes(coseBytes));
+    }
+
+    private byte[] kidAsEightBytes() {
+        if (kid == null) {
+            return null;
+        }
+        try {
+            byte[] decoded = java.util.Base64.getDecoder().decode(kid);
+            return decoded.length == 8 ? decoded : null;
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
     private String getBase45(byte[] deflateBytes) {
 
         return "HC1:" + Base45.getEncoder().encodeToString(deflateBytes);
