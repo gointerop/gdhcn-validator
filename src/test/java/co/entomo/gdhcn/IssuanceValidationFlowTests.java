@@ -394,4 +394,45 @@ class IssuanceValidationFlowTests {
 				java.sql.Timestamp.from(java.time.Instant.now().minus(java.time.Duration.ofHours(3))), ipsId));
 		mvc.perform(get("/v2/ips-json/" + ipsId)).andExpect(status().isNotFound());
 	}
+
+	// ------------------------------------------------------------------ JWE (off by default)
+
+	@Test
+	void theIpsIsServedInClearByDefault() throws Exception {
+		String manifestId = manifestIdOf(issue(null, "1234"));
+		String manifest = openManifest(manifestId, "1234").andReturn().getResponse().getContentAsString();
+		String location = com.jayway.jsonpath.JsonPath.read(manifest, "$.files[0].location");
+		mvc.perform(get("/v2/ips-json/" + location.substring(location.lastIndexOf('/') + 1)))
+				.andExpect(status().isOk())
+				.andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content()
+						.contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+				.andExpect(jsonPath("$.resourceType").value("Bundle"));
+	}
+
+	@Test
+	void withJweOnTheIpsIsEncryptedWithTheLinkKeyAndOnlyThatKeyOpensIt() throws Exception {
+		Object service = org.springframework.test.util.AopTestUtils.getTargetObject(gdhcnService);
+		org.springframework.test.util.ReflectionTestUtils.setField(service, "jweEnabled", true);
+		try {
+			String hc1 = issue(null, "1234");
+			String validation = validate(hc1).andReturn().getResponse().getContentAsString();
+			String url = com.jayway.jsonpath.JsonPath.read(validation, "$.shLinkContent.url");
+			String key = com.jayway.jsonpath.JsonPath.read(validation, "$.shLinkContent.key");
+			String manifest = openManifest(url.substring(url.lastIndexOf('/') + 1), "1234").andReturn().getResponse()
+					.getContentAsString();
+			String location = com.jayway.jsonpath.JsonPath.read(manifest, "$.files[0].location");
+
+			var result = mvc.perform(get("/v2/ips-json/" + location.substring(location.lastIndexOf('/') + 1)))
+					.andExpect(status().isOk()).andReturn().getResponse();
+			assertTrue(result.getContentType().startsWith("application/jose"), result.getContentType());
+			String jwe = result.getContentAsString(StandardCharsets.UTF_8);
+			assertFalse(jwe.contains("resourceType"));
+
+			com.nimbusds.jose.JWEObject parsed = com.nimbusds.jose.JWEObject.parse(jwe);
+			parsed.decrypt(new com.nimbusds.jose.crypto.DirectDecrypter(java.util.Base64.getUrlDecoder().decode(key)));
+			assertEquals("Bundle", com.jayway.jsonpath.JsonPath.read(parsed.getPayload().toString(), "$.resourceType"));
+		} finally {
+			org.springframework.test.util.ReflectionTestUtils.setField(service, "jweEnabled", false);
+		}
+	}
 }
