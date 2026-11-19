@@ -35,6 +35,10 @@ public class HttpClientUtils {
 
 	@Autowired
 	HttpClient httpClient;
+	@Autowired
+	DidTrustList didTrustList;
+	@Value("${gdhcn.trustlist.mode:did}")
+	private String trustListMode;
 	@Value("${gdhcn.dev.url}")
 	private String gdhcnDevUrl;
 	private final JsonMapper OBJECT_MAPPER = JsonMapper.builder()
@@ -49,6 +53,9 @@ public class HttpClientUtils {
 	 */
 	public GdhcnCertificateVO getGdhcnCertificate(String countryCode, String kid) throws GdhcnValidationException
 	{
+		if ("did".equalsIgnoreCase(trustListMode)) {
+			return didTrustList.find(countryCode, kid);
+		}
 		log.info("Fetching url "+gdhcnDevUrl+"/trustList/certificate?group=DSC&country="+countryCode);
 		try {
 			HttpRequest request = HttpRequest.newBuilder()

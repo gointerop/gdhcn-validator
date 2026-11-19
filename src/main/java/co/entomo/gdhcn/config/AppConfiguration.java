@@ -30,10 +30,12 @@ import org.springframework.context.annotation.Configuration;
  */
 @Configuration
 public class AppConfiguration {
-	@Value("${tng.tls.pem}")
+	@Value("${tng.tls.pem:}")
 	private String certificateFile;;
-	@Value("${tng.tls.key}")
+	@Value("${tng.tls.key:}")
 	private String keyFile;
+	@Value("${gdhcn.trustlist.mode:did}")
+	private String trustListMode;
     /**
      * Creates a {@link ModelMapper} bean used for object mapping.
      *
@@ -73,6 +75,11 @@ public class AppConfiguration {
 	@Bean
 	public HttpClient httpClient()  throws Exception
 	{
+		if ("did".equalsIgnoreCase(trustListMode)) {
+			// The public trust list needs no client certificate
+			return HttpClient.newBuilder().connectTimeout(java.time.Duration.ofSeconds(10))
+					.followRedirects(HttpClient.Redirect.NORMAL).build();
+		}
 		CertificateFactory cf = CertificateFactory.getInstance("X.509");
         FileInputStream certInputStream = new FileInputStream(certificateFile);
         X509Certificate certificate = (X509Certificate) cf.generateCertificate(certInputStream);
