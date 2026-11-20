@@ -92,6 +92,7 @@ class IssuanceValidationFlowTests {
 		r.add("tng.dsc.privateKey", () -> DIR.resolve("dsc.key").toString());
 		r.add("tng.dsc.privateKey.kid", () -> KID);
 		r.add("tng.country", () -> COUNTRY);
+		r.add("gdhcn.trustlist.mode", () -> "tng");
 	}
 
 	@Autowired
