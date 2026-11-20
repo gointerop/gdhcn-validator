@@ -52,9 +52,9 @@ public class CertificateUtils {
 			PrivateKey privateKey = keyFactory.generatePrivate(keySpec);
 			return privateKey;
 		} catch (NoSuchAlgorithmException e) {
-			e.printStackTrace();
+			log.warn("Unable to load key or certificate: {}", e.getClass().getSimpleName());
 		} catch (InvalidKeySpecException e) {
-			e.printStackTrace();
+			log.warn("Unable to load key or certificate: {}", e.getClass().getSimpleName());
 		}
 		return null;
 	}
@@ -85,9 +85,9 @@ public class CertificateUtils {
             System.arraycopy(encodedhash, 0, truncated, 0, truncated.length);
             return truncated;
         } catch (CertificateException e) {
-            log.info("CertificateException" ,e);
+            log.warn("CertificateException: {}", e.getClass().getSimpleName());
         } catch (NoSuchAlgorithmException e) {
-            log.info("NoSuchAlgorithmException", e);
+            log.warn("NoSuchAlgorithmException: {}", e.getClass().getSimpleName());
         }
         throw new GdhcnValidationException("Unable to find Kid from Public Key");
     }
@@ -110,7 +110,7 @@ public class CertificateUtils {
 			PublicKey publicKey = certificate.getPublicKey();
 			return publicKey;
 		} catch (CertificateException e) {
-			e.printStackTrace();
+			log.warn("Unable to load key or certificate: {}", e.getClass().getSimpleName());
 		}
 		return null;
 	}

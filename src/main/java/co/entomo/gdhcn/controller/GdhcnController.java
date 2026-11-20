@@ -60,7 +60,6 @@ public class GdhcnController
 	 * @param manifestId the ID of the JSON data to retrieve.
 	 * @return a {@link ResponseEntity} containing the JSON content.
 	 */
-	@CrossOrigin(origins = "*", allowedHeaders = "*")
 	@GetMapping(value = "/v2/ips-json/{manifestId}", produces = {"application/json"})
 	public ResponseEntity<String> getIpsJson(@PathVariable("manifestId") String manifestId) throws GdhcnValidationException {
 		String jsonContent = gdhcnService.downloadJson(manifestId);
@@ -74,7 +73,6 @@ public class GdhcnController
 	 * @return a {@link ResponseEntity} containing the manifest data in JSON format.
 	 * @throws GdhcnValidationException if there is a validation error.
 	 */
-	@CrossOrigin(origins = "*", allowedHeaders = "*")
 	@PostMapping(value = "/v2/manifests/{manifestId}", produces = {"application/json"})
 	public ResponseEntity<Map<String, List<Map<String,String>>>> getManifest(@RequestBody ManifestRequest manifestRequest, @PathVariable("manifestId") String manifestId) throws GdhcnValidationException {
 		Map<String, List<Map<String, String>>> response = null;

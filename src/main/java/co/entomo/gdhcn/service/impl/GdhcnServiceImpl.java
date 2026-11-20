@@ -132,16 +132,11 @@ public class GdhcnServiceImpl implements GdhcnService {
             PrivateKey privateKey = certificateUtils.getPrivateKey(getPrivateDSCKeyContent(), countryCode);
             String encoded = new GreenCertificateEncoder(privateKey, kidId).encodeCbor(cwt);
             return encoded;
-        } catch (JacksonException e) {
-            e.printStackTrace();
-        } catch (CoseException e) {
-            e.printStackTrace();
-        } catch (CompressorException e) {
-            e.printStackTrace();
-        } catch (IOException e) {
-            e.printStackTrace();
+        } catch (JacksonException | CoseException | IOException e) {
+            log.error("Issuance failed: {}", e.getClass().getSimpleName());
+            log.debug("Issuance failure detail", e);
+            throw new GdhcnValidationException("Unable to issue the certificate");
         }
-        return null;
     }
 
     @Override
@@ -150,8 +145,6 @@ public class GdhcnServiceImpl implements GdhcnService {
         SHLinkContent shLinkContent = null;
         int step = 0;
         try {
-            log.info("qrCodeEncodedContent : " + qrCodeEncodedContent);
-            log.info("response : " + response);
             if (!ObjectUtils.isEmpty(qrCodeEncodedContent)) {
                 qrCodeEncodedContent = qrCodeEncodedContent.substring(4);
                 byte[] decodedBytes = Base45.getDecoder().decode(qrCodeEncodedContent);
@@ -164,7 +157,6 @@ public class GdhcnServiceImpl implements GdhcnService {
                 VhlPayloadCodec.Decoded decoded = VhlPayloadCodec.decode(msg.payload());
                 updateStatus(response, ++step, ValidationStatus.SUCCESS);
                 updateStatus(response, ++step, ValidationStatus.SUCCESS);
-                log.info("Protected Header: " + msg.protectedHeaderToString());
                 String kid = msg.kid();
                 GdhcnCertificateVO gdhcnCertificateVO = httpClientUtils.getGdhcnCertificate(decoded.iss(), kid);
                 if (gdhcnCertificateVO == null)
@@ -190,7 +182,8 @@ public class GdhcnServiceImpl implements GdhcnService {
                 updateStatus(response, ++step, ValidationStatus.SUCCESS);
             }
         } catch (Exception e) {
-            e.printStackTrace();
+            log.warn("Validation failed at step {}: {}", step + 1, e.getClass().getSimpleName());
+            log.debug("Validation failure detail", e);
             updateStatus(response, ++step, ValidationStatus.FAILED);
         }
         return ValidateCwtResponse.builder()
@@ -297,44 +290,49 @@ public class GdhcnServiceImpl implements GdhcnService {
             Optional<QrCode> optionalQrCode =  qrCodeRepository.findByManifestId(manifestId);
             if(optionalQrCode.isPresent()) {
                 QrCode qrCode = optionalQrCode.get();
-                if (qrCode != null && qrCode.getFlag() != null && qrCode.getFlag().contains("P")) {
-                    throw new GdhcnValidationException("Invalid request");
+                if (qrCode.getFlag() != null && qrCode.getFlag().contains("P")) {
+                    throw new GdhcnLinkInactiveException("Link is not active");
                 }
-                if (qrCode != null) {
+                if (qrCode.getExpiresOn() != null && qrCode.getExpiresOn().isBefore(Instant.now())) {
+                    throw new GdhcnLinkInactiveException("Link is not active");
+                }
+                {
                     String fileName = qrCode.getId() + ".json";
                     byte[] rawContent;
                     try (InputStream is = gdhcnFileSystem.downloadJson(fileName)) {
                         rawContent = is.readAllBytes();
                     }
                     String jsonContent = new String(rawContent);
-                    log.info("Downloaded json: " + jsonContent);
                     qrCodeRepository.save(qrCode);
                     return jsonContent;
                 }
             }
             // access through manifest
-            IpsFile ipsFile =  ipsFileRepository.findById(manifestId).get();
-            if(ipsFile !=null && ipsFile.isAccessed())
+            IpsFile ipsFile = ipsFileRepository.findById(manifestId)
+                    .orElseThrow(() -> new GdhcnLinkInactiveException("Link not found"));
+            if (ipsFile.isAccessed())
             {
                 throw new GdhcnIPSAlreadyAccessedException("Already Accessed");
             }
+            if (ipsFile.getCreatedAt().plus(ipsShLinkExpiry, ChronoUnit.MINUTES).isBefore(Instant.now())) {
+                throw new GdhcnLinkInactiveException("Link is not active");
+            }
             ipsFile.setAccessed(true);
-            QrCode qrCode = qrCodeRepository.findByManifestId(ipsFile.getManifestId()).get();
-            if(qrCode !=null) {
+            QrCode qrCode = qrCodeRepository.findByManifestId(ipsFile.getManifestId())
+                    .orElseThrow(() -> new GdhcnLinkInactiveException("Link not found"));
+            {
                 String fileName = qrCode.getId() + ".json";
                 byte[] rawContent;
                 try (InputStream is = gdhcnFileSystem.downloadJson(fileName)) {
                     rawContent = is.readAllBytes();
                 }
                 String jsonContent = new String(rawContent);
-                log.info("Downloaded json: " + jsonContent);
                 ipsFileRepository.save(ipsFile);
                 return jsonContent;
             }
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
-        return null;
     }
 
     @Override
@@ -348,7 +346,6 @@ public class GdhcnServiceImpl implements GdhcnService {
                     rawContent = is.readAllBytes();
                 }
                 String jsonContent = new String(rawContent);
-                log.info("Downloaded json: " + jsonContent);
             }
         } catch (IOException e) {
             throw new RuntimeException(e);
