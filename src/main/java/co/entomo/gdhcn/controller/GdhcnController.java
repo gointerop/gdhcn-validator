@@ -24,6 +24,7 @@ import lombok.AllArgsConstructor;
 @AllArgsConstructor
 public class GdhcnController 
 {
+
 	private final GdhcnService gdhcnService;
 
 	/**
@@ -60,10 +61,12 @@ public class GdhcnController
 	 * @param manifestId the ID of the JSON data to retrieve.
 	 * @return a {@link ResponseEntity} containing the JSON content.
 	 */
-	@GetMapping(value = "/v2/ips-json/{manifestId}", produces = {"application/json"})
+	@GetMapping(value = "/v2/ips-json/{manifestId}", produces = {"application/json", "application/jose"})
 	public ResponseEntity<String> getIpsJson(@PathVariable("manifestId") String manifestId) throws GdhcnValidationException {
-		String jsonContent = gdhcnService.downloadJson(manifestId);
-		return ResponseEntity.of(Optional.of(jsonContent));
+		String content = gdhcnService.downloadJson(manifestId);
+		return ResponseEntity.ok()
+				.contentType(org.springframework.http.MediaType.parseMediaType(gdhcnService.isJweEnabled() ? "application/jose" : "application/json"))
+				.body(content);
 	}
 	/**
 	 * Endpoint for getting manifest data.

@@ -11,6 +11,7 @@ import co.entomo.gdhcn.hcert.CoseException;
 import co.entomo.gdhcn.hcert.CoseSign1;
 import co.entomo.gdhcn.hcert.GreenCertificateDecoder;
 import co.entomo.gdhcn.hcert.GreenCertificateEncoder;
+import co.entomo.gdhcn.hcert.JweEncryptor;
 import co.entomo.gdhcn.hcert.VhlPayloadCodec;
 import co.entomo.gdhcn.util.PemSource;
 import co.entomo.gdhcn.repository.IpsFileRepository;
@@ -78,6 +79,8 @@ public class GdhcnServiceImpl implements GdhcnService {
     private ModelMapper modelMapper;
     @Autowired
     private org.springframework.security.crypto.password.PasswordEncoder pinEncoder;
+    @Value("${vhl.jwe.enabled:false}")
+    private boolean jweEnabled;
     @Value("${vhl.pin.max-attempts:5}")
     private int pinMaxAttempts;
 
@@ -304,7 +307,7 @@ public class GdhcnServiceImpl implements GdhcnService {
                     }
                     String jsonContent = new String(rawContent);
                     qrCodeRepository.save(qrCode);
-                    return jsonContent;
+                    return deliver(qrCode, jsonContent);
                 }
             }
             // access through manifest
@@ -328,7 +331,7 @@ public class GdhcnServiceImpl implements GdhcnService {
                 }
                 String jsonContent = new String(rawContent);
                 ipsFileRepository.save(ipsFile);
-                return jsonContent;
+                return deliver(qrCode, jsonContent);
             }
         } catch (IOException e) {
             throw new RuntimeException(e);
@@ -336,21 +339,16 @@ public class GdhcnServiceImpl implements GdhcnService {
     }
 
     @Override
-    public String downloadJWEJson(String jsonId) {
-        try {
-            QrCode qrCode = qrCodeRepository.findById(jsonId).get();
-            if (qrCode != null) {
-                String fileName = jsonId + ".json";
-                byte[] rawContent;
-                try (InputStream is = gdhcnFileSystem.downloadJson(fileName)) {
-                    rawContent = is.readAllBytes();
-                }
-                String jsonContent = new String(rawContent);
-            }
-        } catch (IOException e) {
-            throw new RuntimeException(e);
+    public boolean isJweEnabled() {
+        return jweEnabled;
+    }
+
+    /** The IPS as it leaves the service: in clear, or a JWE keyed by the link key when {@code vhl.jwe.enabled}. */
+    private String deliver(QrCode qrCode, String jsonContent) {
+        if (!jweEnabled) {
+            return jsonContent;
         }
-        return null;
+        return JweEncryptor.encrypt(jsonContent, qrCode.getKey(), "application/fhir+json");
     }
 
     private String getPrivateDSCKeyContent() throws IOException {

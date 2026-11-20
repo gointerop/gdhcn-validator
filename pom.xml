@@ -133,6 +133,13 @@
 			</exclusions>
 		</dependency>
 		<dependency>
+			<!-- test only: independent JWE reader for the encrypted IPS -->
+			<groupId>com.nimbusds</groupId>
+			<artifactId>nimbus-jose-jwt</artifactId>
+			<version>10.0.2</version>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
 			<!-- test only: builds a self-signed DSC certificate for the issue/validate round trip -->
 			<groupId>org.bouncycastle</groupId>
 			<artifactId>bcpkix-jdk18on</artifactId>

@@ -50,8 +50,6 @@ public interface GdhcnService {
 	 *
 	 * @param manifestId the identifier for the JWE JSON data to be downloaded.
 	 * @return a {@code String} representing the JWE JSON data.
-	 */
-	String downloadJWEJson(String manifestId);
 
 	/**
 	 * Downloads standard JSON data (not JWE) based on the provided JSON identifier.
@@ -59,5 +57,8 @@ public interface GdhcnService {
 	 * @param jsonId the identifier for the JSON data to be downloaded.
 	 * @return a {@code String} representing the JSON data.
 	 */
+	/** True when the IPS is served as a JWE keyed by the link key. */
+	boolean isJweEnabled();
+
 	String downloadJson(String jsonId) throws GdhcnValidationException;
 }
