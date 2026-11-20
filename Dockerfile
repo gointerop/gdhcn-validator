@@ -31,6 +31,7 @@ ENV FILESYSTEM_BASELOCATION=/data \
 
 USER gdhcn
 EXPOSE 8082
+HEALTHCHECK --interval=30s --timeout=5s --start-period=120s --retries=3   CMD wget -q -O /dev/null http://127.0.0.1:8082/actuator/health/readiness || exit 1
 # Configuration is read from the environment (Spring relaxed binding), e.g.:
 #   SPRING_PROFILES_ACTIVE=fileSystem|aws
 #   SPRING_DATASOURCE_URL / _USERNAME / _PASSWORD

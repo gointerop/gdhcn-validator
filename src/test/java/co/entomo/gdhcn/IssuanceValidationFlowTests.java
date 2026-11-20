@@ -95,6 +95,7 @@ class IssuanceValidationFlowTests {
 		r.add("tng.dsc.privateKey", () -> DIR.resolve("dsc.key").toString());
 		r.add("tng.dsc.privateKey.kid", () -> KID);
 		r.add("tng.country", () -> COUNTRY);
+		r.add("gdhcn.trustlist.mode", () -> "tng");
 	}
 
 	@Autowired
@@ -149,6 +150,14 @@ class IssuanceValidationFlowTests {
 		}
 		r.andExpect(jsonPath("$.shLinkContent.label").value(org.hamcrest.Matchers.nullValue()))
 				.andExpect(jsonPath("$.shLinkContent.exp").isNumber());
+	}
+
+	@Test
+	void readinessProbeIsUpAndOnlyHealthIsExposed() throws Exception {
+		mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/actuator/health/readiness"))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.status").value("UP"));
+		mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/actuator/env"))
+				.andExpect(status().isNotFound());
 	}
 
 	@Test

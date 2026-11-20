@@ -30,10 +30,12 @@ import org.springframework.context.annotation.Configuration;
  */
 @Configuration
 public class AppConfiguration {
-	@Value("${tng.tls.pem}")
+	@Value("${tng.tls.pem:}")
 	private String certificateFile;;
-	@Value("${tng.tls.key}")
+	@Value("${tng.tls.key:}")
 	private String keyFile;
+	@Value("${gdhcn.trustlist.mode:did}")
+	private String trustListMode;
     /**
      * Creates a {@link ModelMapper} bean used for object mapping.
      *
@@ -73,13 +75,18 @@ public class AppConfiguration {
 	@Bean
 	public HttpClient httpClient()  throws Exception
 	{
+		if ("did".equalsIgnoreCase(trustListMode)) {
+			// The public trust list needs no client certificate
+			return HttpClient.newBuilder().connectTimeout(java.time.Duration.ofSeconds(10))
+					.followRedirects(HttpClient.Redirect.NORMAL).build();
+		}
 		CertificateFactory cf = CertificateFactory.getInstance("X.509");
-        FileInputStream certInputStream = new FileInputStream(certificateFile);
+        java.io.InputStream certInputStream = new java.io.ByteArrayInputStream(
+                co.entomo.gdhcn.util.PemSource.read(certificateFile).getBytes(java.nio.charset.StandardCharsets.UTF_8));
         X509Certificate certificate = (X509Certificate) cf.generateCertificate(certInputStream);
 
         // Load the private key
-        FileInputStream keyInputStream = new FileInputStream(keyFile);
-        String privakeKeyContent = readFileToString(keyFile);
+        String privakeKeyContent = co.entomo.gdhcn.util.PemSource.read(keyFile);
         
         privakeKeyContent = privakeKeyContent.replace("-----BEGIN PRIVATE KEY-----", "")
         .replace("-----END PRIVATE KEY-----", "")
