@@ -12,6 +12,7 @@ import co.entomo.gdhcn.hcert.CoseSign1;
 import co.entomo.gdhcn.hcert.GreenCertificateDecoder;
 import co.entomo.gdhcn.hcert.GreenCertificateEncoder;
 import co.entomo.gdhcn.hcert.VhlPayloadCodec;
+import co.entomo.gdhcn.util.PemSource;
 import co.entomo.gdhcn.repository.IpsFileRepository;
 import co.entomo.gdhcn.repository.QrCodeRepository;
 import co.entomo.gdhcn.service.GdhcnFileSystem;
@@ -353,16 +354,6 @@ public class GdhcnServiceImpl implements GdhcnService {
     }
 
     private String getPrivateDSCKeyContent() throws IOException {
-        StringBuilder content = new StringBuilder();
-        try (FileInputStream fis = new FileInputStream(dscKeyPath);
-             InputStreamReader isr = new InputStreamReader(fis);
-             BufferedReader reader = new BufferedReader(isr)) {
-
-            String line;
-            while ((line = reader.readLine()) != null) {
-                content.append(line).append(System.lineSeparator());
-            }
-        }
-        return content.toString();
+        return PemSource.read(dscKeyPath);
     }
 }
