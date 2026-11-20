@@ -149,6 +149,14 @@ class IssuanceValidationFlowTests {
 	}
 
 	@Test
+	void readinessProbeIsUpAndOnlyHealthIsExposed() throws Exception {
+		mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/actuator/health/readiness"))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.status").value("UP"));
+		mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/actuator/env"))
+				.andExpect(status().isNotFound());
+	}
+
+	@Test
 	void legacyListFormatStillIssuesAndValidates() throws Exception {
 		Object service = org.springframework.test.util.AopTestUtils.getTargetObject(gdhcnService);
 		org.springframework.test.util.ReflectionTestUtils.setField(service, "vhlPayloadFormat", "list");
