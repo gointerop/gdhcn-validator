@@ -38,6 +38,19 @@ public class ApiExceptionHandler {
                 .status(false).build();
         return new ResponseEntity<>(errorDetails, HttpStatus.INTERNAL_SERVER_ERROR);
     }
+    @ExceptionHandler(co.entomo.gdhcn.exceptions.GdhcnInvalidPasscodeException.class)
+    public final ResponseEntity<java.util.Map<String, Integer>> handleInvalidPasscode(co.entomo.gdhcn.exceptions.GdhcnInvalidPasscodeException ex) {
+        return new ResponseEntity<>(java.util.Map.of("remainingAttempts", ex.getRemainingAttempts()), HttpStatus.UNAUTHORIZED);
+    }
+    @ExceptionHandler(co.entomo.gdhcn.exceptions.GdhcnLinkInactiveException.class)
+    public final ResponseEntity<ApiFailureResponse> handleLinkInactive(co.entomo.gdhcn.exceptions.GdhcnLinkInactiveException ex) {
+        var errorDetails = ApiFailureResponse.builder()
+                .code(HttpStatus.NOT_FOUND.value())
+                .error(ex.getMessage())
+                .errorMessage("Unable to process request")
+                .status(false).build();
+        return new ResponseEntity<>(errorDetails, HttpStatus.NOT_FOUND);
+    }
     @ExceptionHandler(GdhcnQRCodeExpiredException.class)
     public final ResponseEntity<ApiFailureResponse> handleApiQrExpiredException(GdhcnQRCodeExpiredException ex) {
         var errorDetails = ApiFailureResponse.builder()

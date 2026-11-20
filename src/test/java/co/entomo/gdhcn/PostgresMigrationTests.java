@@ -78,7 +78,7 @@ class PostgresMigrationTests {
 		void flywayAppliedTheBaselineAndHibernateValidatedIt() {
 			List<Map<String, Object>> history = jdbc.queryForList(
 					"select version, success from flyway_schema_history where version is not null order by installed_rank");
-			assertEquals(List.of("1", "2"), history.stream().map(h -> h.get("version")).toList());
+			assertEquals(List.of("1", "2", "3"), history.stream().map(h -> h.get("version")).toList());
 			history.forEach(h -> assertEquals(true, h.get("success")));
 		}
 
@@ -145,7 +145,7 @@ class PostgresMigrationTests {
 					.configuration(Map.of("flyway.postgresql.transactional.lock", "false")).load();
 			var result = flyway.migrate();
 			assertTrue(result.success);
-			assertEquals(1, result.migrationsExecuted, "only V2 runs; the baseline must not re-run on an existing schema");
+			assertEquals(2, result.migrationsExecuted, "only V2 and V3 run; the baseline must not re-run on an existing schema");
 
 			try (Connection c = DriverManager.getConnection(postgres.getJdbcUrl(), postgres.getUsername(),
 					postgres.getPassword()); Statement st = c.createStatement()) {

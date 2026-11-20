@@ -29,7 +29,14 @@ public class QrCode {
 	@Column(length = 36)
 	private String id;
 	
+	/** Clear passcode of links issued before the hash existed; null for new links. */
 	private String passCode;
+
+	/** Argon2id hash of the passcode. */
+	private String passCodeHash;
+
+	/** Lifetime count of wrong passcodes. */
+	private int failedAttempts;
 	
 	@JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", timezone = "UTC")
 	@JdbcTypeCode(SqlTypes.TIMESTAMP)

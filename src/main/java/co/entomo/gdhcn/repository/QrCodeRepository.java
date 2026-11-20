@@ -27,4 +27,9 @@ public interface QrCodeRepository extends JpaRepository<QrCode, String> {
     //Optional<QrCode> findByManifestIdAndPassCodeAndIsAccessed(String manifestId, String passCode, Boolean accessed);
 
     Optional<QrCode> findByManifestId(String manifestId);
+
+    /** Same lookup, locking the row so that passcode attempts on one link are counted one at a time. */
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @org.springframework.data.jpa.repository.Query("select q from QrCode q where q.manifestId = :manifestId")
+    Optional<QrCode> findForUpdateByManifestId(@org.springframework.data.repository.query.Param("manifestId") String manifestId);
 }

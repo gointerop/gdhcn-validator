@@ -3,6 +3,8 @@ package co.entomo.gdhcn.service.impl;
 import co.entomo.gdhcn.entity.IpsFile;
 import co.entomo.gdhcn.entity.QrCode;
 import co.entomo.gdhcn.exceptions.GdhcnIPSAlreadyAccessedException;
+import co.entomo.gdhcn.exceptions.GdhcnInvalidPasscodeException;
+import co.entomo.gdhcn.exceptions.GdhcnLinkInactiveException;
 import co.entomo.gdhcn.exceptions.GdhcnQRCodeExpiredException;
 import co.entomo.gdhcn.exceptions.GdhcnValidationException;
 import co.entomo.gdhcn.hcert.CoseException;
@@ -74,6 +76,10 @@ public class GdhcnServiceImpl implements GdhcnService {
     private HttpClientUtils httpClientUtils;
     @Autowired
     private ModelMapper modelMapper;
+    @Autowired
+    private org.springframework.security.crypto.password.PasswordEncoder pinEncoder;
+    @Value("${vhl.pin.max-attempts:5}")
+    private int pinMaxAttempts;
 
     @Autowired
     private GdhcnFileSystem gdhcnFileSystem;
@@ -103,6 +109,10 @@ public class GdhcnServiceImpl implements GdhcnService {
                     .build();
 
             QrCode qrCode = modelMapper.map(qrCodeRequest, QrCode.class);
+            qrCode.setPassCode(null);
+            if (StringUtils.hasLength(qrCodeRequest.getPassCode())) {
+                qrCode.setPassCodeHash(pinEncoder.encode(qrCodeRequest.getPassCode()));
+            }
             qrCode.setJsonUrl(jsonUrl);
             qrCode.setManifestId(manifestId);
             qrCode.setId(uuid);
@@ -218,17 +228,27 @@ public class GdhcnServiceImpl implements GdhcnService {
     }
 
     @Override
+    @org.springframework.transaction.annotation.Transactional(noRollbackFor = GdhcnInvalidPasscodeException.class)
     public Map<String, List<Map<String, String>>> getManifest(ManifestRequest manifestRequest, String manifestId) throws GdhcnValidationException {
         Map<String, List<Map<String, String>>> response = new HashMap<String, List<Map<String, String>>>();
-        QrCode qrCode = qrCodeRepository.findByManifestId(manifestId).get();
-        if (qrCode != null)
+        QrCode qrCode = qrCodeRepository.findForUpdateByManifestId(manifestId)
+                .orElseThrow(() -> new GdhcnLinkInactiveException("Link not found"));
+        if (qrCode.getFlag() == null || !qrCode.getFlag().contains("P")
+                || (qrCode.getExpiresOn() != null && qrCode.getExpiresOn().isBefore(Instant.now()))
+                || qrCode.getFailedAttempts() >= pinMaxAttempts) {
+            throw new GdhcnLinkInactiveException("Link is not active");
+        }
+        String given = manifestRequest == null ? null : manifestRequest.getPasscode();
+        if (given == null || given.isBlank()) {
+            // nothing was tried: do not use up an attempt
+            throw new GdhcnInvalidPasscodeException(pinMaxAttempts - qrCode.getFailedAttempts());
+        }
+        if (!passcodeMatches(qrCode, given)) {
+            qrCode.setFailedAttempts(qrCode.getFailedAttempts() + 1);
+            qrCodeRepository.save(qrCode);
+            throw new GdhcnInvalidPasscodeException(Math.max(0, pinMaxAttempts - qrCode.getFailedAttempts()));
+        }
         {
-            if(qrCode.getFlag() == null || (qrCode.getFlag() != null && !qrCode.getFlag().contains("P"))){
-                throw new RuntimeException();
-            }
-            if(!qrCode.getPassCode().contentEquals(manifestRequest.getPasscode())){
-                throw new GdhcnValidationException("");
-            }
             //Ips Created.
             Optional<IpsFile> optIpsFile = ipsFileRepository.findByManifestId(manifestId);
             IpsFile ipsFile = null;
@@ -252,7 +272,22 @@ public class GdhcnServiceImpl implements GdhcnService {
             response.put("files", List.of(Map.of("contentType", "application/fhir+json", "location", url)));
             return response;
         }
-        throw new GdhcnValidationException("Invalid request");
+    }
+
+    /** Checks the passcode against the hash; links issued before the hash existed are checked in clear and upgraded. */
+    private boolean passcodeMatches(QrCode qrCode, String given) {
+        if (qrCode.getPassCodeHash() != null) {
+            return pinEncoder.matches(given, qrCode.getPassCodeHash());
+        }
+        if (qrCode.getPassCode() != null
+                && java.security.MessageDigest.isEqual(qrCode.getPassCode().getBytes(StandardCharsets.UTF_8),
+                        given.getBytes(StandardCharsets.UTF_8))) {
+            qrCode.setPassCodeHash(pinEncoder.encode(given));
+            qrCode.setPassCode(null);
+            qrCodeRepository.save(qrCode);
+            return true;
+        }
+        return false;
     }
 
     @Override
